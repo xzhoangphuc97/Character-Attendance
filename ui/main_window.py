@@ -19,7 +19,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Game Attendance Manager")
+        self.setWindowTitle("Character Attendance")
         self.resize(1200, 800)
 
         self.selected_image = None
