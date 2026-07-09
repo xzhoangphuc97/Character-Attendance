@@ -1,10 +1,23 @@
 # database/db.py
 
 import os
+import sys
 import sqlite3
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def get_base_dir():
+    """
+    Lấy thư mục gốc:
+    - Nếu chạy bằng file .exe (PyInstaller): thư mục chứa file .exe
+    - Nếu chạy bằng Python script: thư mục chứa file .py
+    """
+    if getattr(sys, 'frozen', False):  # đang chạy từ file .exe
+        return os.path.dirname(sys.executable)
+    else:  # chạy bằng Python script
+        return os.path.dirname(os.path.abspath(__file__))
+
+
+BASE_DIR = get_base_dir()
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "attendance.db")
 

@@ -1,11 +1,16 @@
 # ui/main_window.py
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QDateTime, QDate, QStringListModel
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
+    QComboBox,
+    QCompleter,
+    QDateEdit,
+    QDateTimeEdit,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -16,7 +21,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from services.attendance_service import save_attendance
+from services.attendance_service import (
+    get_all_players,
+    save_attendance,
+    save_manual_attendance_existing,
+)
+from services.export_service import export_daily_detail_excel
+from services.export_monthly_service import (
+    export_monthly_excel as export_monthly_summary_excel,
+)
+from services.license_service import (
+    apply_license_key,
+    get_license_status,
+)
 from services.ocr_service import extract_member_names
 
 
@@ -28,9 +45,14 @@ class MainWindow(QMainWindow):
         - Select one game screenshot image.
         - Preview selected image.
         - Detect guild member names from image.
-        - Save attendance records into SQLite database.
-        - Skip check-in if latest check-in is less than 1 hour.
-        - Show OCR result and processing result in UI.
+        - Save OCR attendance records into SQLite database.
+        - Manual attendance by selecting existing player only.
+        - Prevent creating new player from manual attendance.
+        - Skip check-in if another check-in is less than 1 hour apart.
+        - Export daily attendance detail to Excel.
+        - Export monthly attendance summary to Excel.
+        - 30-day trial license per machine.
+        - Lock attendance features after license expiration.
     """
 
     def __init__(self):
@@ -39,7 +61,7 @@ class MainWindow(QMainWindow):
         self.selected_image = None
 
         self.setWindowTitle("Character Attendance")
-        self.resize(1200, 750)
+        self.resize(1300, 900)
 
         self.build_ui()
 
@@ -52,6 +74,9 @@ class MainWindow(QMainWindow):
 
         main_layout = QVBoxLayout(central_widget)
 
+        # =========================
+        # Title
+        # =========================
         title = QLabel("Character Attendance")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(
@@ -67,7 +92,40 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(title)
 
         # =========================
-        # Buttons
+        # License information
+        # =========================
+        license_layout = QHBoxLayout()
+
+        self.license_status_label = QLabel()
+        self.license_status_label.setTextInteractionFlags(
+            Qt.TextSelectableByMouse
+        )
+        self.license_status_label.setStyleSheet(
+            """
+            QLabel {
+                font-size: 13px;
+                font-weight: bold;
+                color: #333333;
+            }
+            """
+        )
+
+        self.license_key_input = QLineEdit()
+        self.license_key_input.setPlaceholderText(
+            "Nhập license key để gia hạn..."
+        )
+
+        self.btn_apply_license = QPushButton("Kích hoạt / Gia hạn")
+        self.btn_apply_license.setFixedHeight(35)
+
+        license_layout.addWidget(self.license_status_label)
+        license_layout.addWidget(self.license_key_input)
+        license_layout.addWidget(self.btn_apply_license)
+
+        main_layout.addLayout(license_layout)
+
+        # =========================
+        # Main buttons
         # =========================
         button_layout = QHBoxLayout()
 
@@ -86,13 +144,90 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(button_layout)
 
         # =========================
+        # Manual attendance input
+        # =========================
+        manual_layout = QHBoxLayout()
+
+        self.manual_player_combo = QComboBox()
+        self.manual_player_combo.setEditable(True)
+        self.manual_player_combo.setInsertPolicy(QComboBox.NoInsert)
+        self.manual_player_combo.setPlaceholderText(
+            "Chọn hoặc tìm tên nhân vật..."
+        )
+
+        self.player_completer_model = QStringListModel()
+        self.player_completer = QCompleter(self.player_completer_model)
+        self.player_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.player_completer.setFilterMode(Qt.MatchContains)
+
+        self.manual_player_combo.setCompleter(self.player_completer)
+
+        self.manual_time_input = QDateTimeEdit()
+        self.manual_time_input.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        self.manual_time_input.setDateTime(QDateTime.currentDateTime())
+        self.manual_time_input.setCalendarPopup(True)
+
+        self.btn_manual_checkin = QPushButton("Thêm điểm danh thủ công")
+        self.btn_manual_checkin.setFixedHeight(35)
+
+        self.btn_reload_players = QPushButton("Reload danh sách")
+        self.btn_reload_players.setFixedHeight(35)
+
+        manual_layout.addWidget(QLabel("Tên nhân vật có sẵn:"))
+        manual_layout.addWidget(self.manual_player_combo)
+        manual_layout.addWidget(QLabel("Thời gian:"))
+        manual_layout.addWidget(self.manual_time_input)
+        manual_layout.addWidget(self.btn_manual_checkin)
+        manual_layout.addWidget(self.btn_reload_players)
+
+        main_layout.addLayout(manual_layout)
+
+        # =========================
+        # Export daily Excel
+        # =========================
+        export_daily_layout = QHBoxLayout()
+
+        self.export_date_input = QDateEdit()
+        self.export_date_input.setDisplayFormat("yyyy-MM-dd")
+        self.export_date_input.setDate(QDate.currentDate())
+        self.export_date_input.setCalendarPopup(True)
+
+        self.btn_export_daily = QPushButton("Xuất Excel theo ngày")
+        self.btn_export_daily.setFixedHeight(35)
+
+        export_daily_layout.addWidget(QLabel("Ngày xuất Excel:"))
+        export_daily_layout.addWidget(self.export_date_input)
+        export_daily_layout.addWidget(self.btn_export_daily)
+
+        main_layout.addLayout(export_daily_layout)
+
+        # =========================
+        # Export monthly Excel
+        # =========================
+        export_monthly_layout = QHBoxLayout()
+
+        self.export_month_input = QDateEdit()
+        self.export_month_input.setDisplayFormat("yyyy-MM")
+        self.export_month_input.setDate(QDate.currentDate())
+        self.export_month_input.setCalendarPopup(True)
+
+        self.btn_export_monthly = QPushButton("Xuất Excel theo tháng")
+        self.btn_export_monthly.setFixedHeight(35)
+
+        export_monthly_layout.addWidget(QLabel("Tháng xuất Excel:"))
+        export_monthly_layout.addWidget(self.export_month_input)
+        export_monthly_layout.addWidget(self.btn_export_monthly)
+
+        main_layout.addLayout(export_monthly_layout)
+
+        # =========================
         # Image preview and OCR result
         # =========================
         content_layout = QHBoxLayout()
 
         self.image_preview = QLabel("Chưa chọn ảnh")
         self.image_preview.setAlignment(Qt.AlignCenter)
-        self.image_preview.setFixedSize(550, 320)
+        self.image_preview.setFixedSize(600, 300)
         self.image_preview.setStyleSheet(
             """
             QLabel {
@@ -103,8 +238,10 @@ class MainWindow(QMainWindow):
         )
 
         self.ocr_text = QTextEdit()
-        self.ocr_text.setPlaceholderText("Danh sách tên detect được sẽ hiển thị ở đây...")
-        self.ocr_text.setFixedHeight(320)
+        self.ocr_text.setPlaceholderText(
+            "Danh sách tên detect được sẽ hiển thị ở đây..."
+        )
+        self.ocr_text.setFixedHeight(300)
 
         content_layout.addWidget(self.image_preview)
         content_layout.addWidget(self.ocr_text)
@@ -126,9 +263,9 @@ class MainWindow(QMainWindow):
         )
 
         self.result_table.setColumnWidth(0, 70)
-        self.result_table.setColumnWidth(1, 250)
-        self.result_table.setColumnWidth(2, 150)
-        self.result_table.setColumnWidth(3, 600)
+        self.result_table.setColumnWidth(1, 260)
+        self.result_table.setColumnWidth(2, 160)
+        self.result_table.setColumnWidth(3, 720)
 
         main_layout.addWidget(self.result_table)
 
@@ -156,6 +293,149 @@ class MainWindow(QMainWindow):
         self.btn_select_image.clicked.connect(self.select_image)
         self.btn_process.clicked.connect(self.process_attendance)
         self.btn_clear.clicked.connect(self.clear_screen)
+        self.btn_manual_checkin.clicked.connect(self.process_manual_attendance)
+        self.btn_export_daily.clicked.connect(self.export_daily_excel)
+        self.btn_export_monthly.clicked.connect(self.export_monthly_excel)
+        self.btn_reload_players.clicked.connect(self.load_players_to_combo)
+        self.btn_apply_license.clicked.connect(self.apply_license)
+
+        self.load_players_to_combo()
+        self.refresh_license_status()
+
+    def refresh_license_status(self):
+        """
+        Refresh license status and enable/disable attendance features.
+        """
+        status = get_license_status()
+
+        machine_id = status["machine_id"]
+        expires_at = status["expires_at"]
+        remaining_days = status["remaining_days"]
+        is_active = status["is_active"]
+
+        if is_active:
+            self.license_status_label.setText(
+                "License: ACTIVE | "
+                f"Còn {remaining_days} ngày | "
+                f"Hết hạn: {expires_at} | "
+                f"Machine ID: {machine_id}"
+            )
+
+            self.btn_process.setEnabled(True)
+            self.btn_manual_checkin.setEnabled(True)
+
+        else:
+            self.license_status_label.setText(
+                "License: EXPIRED | "
+                f"Hết hạn: {expires_at} | "
+                f"Machine ID: {machine_id}"
+            )
+
+            self.btn_process.setEnabled(False)
+            self.btn_manual_checkin.setEnabled(False)
+
+    def apply_license(self):
+        """
+        Apply license key from input and refresh license status.
+        """
+        license_key = self.license_key_input.text().strip()
+
+        if not license_key:
+            QMessageBox.warning(
+                self,
+                "Thiếu license key",
+                "Vui lòng nhập license key.",
+            )
+            return
+
+        try:
+            status = apply_license_key(license_key)
+
+            self.license_key_input.clear()
+            self.refresh_license_status()
+
+            QMessageBox.information(
+                self,
+                "Gia hạn thành công",
+                "License đã được gia hạn thành công.\n\n"
+                f"Hạn mới: {status['expires_at']}",
+            )
+
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                "License key không hợp lệ",
+                str(error),
+            )
+
+    def ensure_license_active(self):
+        """
+        Ensure license is active before attendance actions.
+
+        Returns:
+            bool:
+                True if license is active, otherwise False.
+        """
+        status = get_license_status()
+
+        if status["is_active"]:
+            return True
+
+        QMessageBox.warning(
+            self,
+            "License đã hết hạn",
+            "Bản dùng thử 30 ngày đã hết hạn.\n\n"
+            "Tính năng điểm danh đã bị khóa.\n"
+            "Vui lòng nhập license key do chủ app cung cấp để gia hạn.",
+        )
+
+        self.refresh_license_status()
+        return False
+
+    def load_players_to_combo(self):
+        """
+        Load existing players from database to searchable combo box.
+        """
+        players = get_all_players()
+
+        self.manual_player_combo.clear()
+        self.player_completer_model.setStringList([])
+
+        self.manual_player_combo.addItem("Chọn/tìm tên nhân vật...", None)
+
+        player_names = []
+
+        for player in players:
+            self.manual_player_combo.addItem(
+                player["name"],
+                player["id"],
+            )
+            player_names.append(player["name"])
+
+        self.player_completer_model.setStringList(player_names)
+        self.manual_player_combo.setCurrentIndex(0)
+
+    def get_selected_manual_player_id(self):
+        """
+        Get selected player ID from combo box.
+
+        Returns:
+            int | None:
+                Selected player ID or None.
+        """
+        current_text = self.manual_player_combo.currentText().strip()
+
+        if not current_text:
+            return None
+
+        for index in range(self.manual_player_combo.count()):
+            item_text = self.manual_player_combo.itemText(index).strip()
+            item_data = self.manual_player_combo.itemData(index)
+
+            if item_text.lower() == current_text.lower() and item_data is not None:
+                return item_data
+
+        return None
 
     def select_image(self):
         """
@@ -208,13 +488,10 @@ class MainWindow(QMainWindow):
     def process_attendance(self):
         """
         Process attendance from selected image.
-
-        Flow:
-            1. Extract guild member names from selected image.
-            2. Show detected names in OCR text area.
-            3. Save attendance records into SQLite database.
-            4. Show processing result in result table.
         """
+        if not self.ensure_license_active():
+            return
+
         if not self.selected_image:
             QMessageBox.warning(
                 self,
@@ -252,6 +529,8 @@ class MainWindow(QMainWindow):
             )
 
             self.show_results(results)
+            self.load_players_to_combo()
+            self.refresh_license_status()
 
         except Exception as error:
             self.ocr_text.setText(f"Lỗi OCR:\n{error}")
@@ -259,6 +538,106 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Lỗi OCR / Điểm danh",
+                str(error),
+            )
+
+    def process_manual_attendance(self):
+        """
+        Process manual attendance by selecting existing player only.
+        """
+        if not self.ensure_license_active():
+            return
+
+        player_id = self.get_selected_manual_player_id()
+
+        checkin_time_text = self.manual_time_input.dateTime().toString(
+            "yyyy-MM-dd HH:mm:ss"
+        )
+
+        if player_id is None:
+            QMessageBox.warning(
+                self,
+                "Chưa chọn nhân vật",
+                "Vui lòng chọn tên nhân vật có sẵn trong danh sách.\n\n"
+                "Không thể nhập tên mới ở phần điểm danh thủ công.",
+            )
+            return
+
+        try:
+            results = save_manual_attendance_existing(
+                player_id=player_id,
+                checkin_time_text=checkin_time_text,
+            )
+
+            selected_name = self.manual_player_combo.currentText().strip()
+
+            self.ocr_text.setText(
+                "Điểm danh thủ công từ danh sách có sẵn:\n"
+                f"{selected_name}\n\n"
+                "Thời gian:\n"
+                f"{checkin_time_text}"
+            )
+
+            self.show_results(results)
+
+            self.manual_player_combo.setCurrentIndex(0)
+            self.manual_time_input.setDateTime(QDateTime.currentDateTime())
+            self.refresh_license_status()
+
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                "Lỗi điểm danh thủ công",
+                str(error),
+            )
+
+    def export_daily_excel(self):
+        """
+        Export daily attendance detail to Excel.
+        """
+        target_date = self.export_date_input.date().toString("yyyy-MM-dd")
+
+        try:
+            output_file = export_daily_detail_excel(target_date)
+
+            QMessageBox.information(
+                self,
+                "Xuất Excel theo ngày thành công",
+                f"Đã tạo file Excel:\n{output_file}",
+            )
+
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                "Lỗi xuất Excel theo ngày",
+                str(error),
+            )
+
+    def export_monthly_excel(self):
+        """
+        Export monthly attendance summary to Excel.
+        """
+        selected_date = self.export_month_input.date()
+
+        year = selected_date.year()
+        month = selected_date.month()
+
+        try:
+            output_file = export_monthly_summary_excel(
+                year=year,
+                month=month,
+            )
+
+            QMessageBox.information(
+                self,
+                "Xuất Excel theo tháng thành công",
+                f"Đã tạo file Excel:\n{output_file}",
+            )
+
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                "Lỗi xuất Excel theo tháng",
                 str(error),
             )
 
@@ -318,11 +697,20 @@ class MainWindow(QMainWindow):
         Clear selected image, OCR result, and result table.
         """
         self.selected_image = None
+
         self.image_preview.clear()
         self.image_preview.setText("Chưa chọn ảnh")
+
         self.ocr_text.clear()
         self.result_table.setRowCount(0)
+
+        self.manual_player_combo.setCurrentIndex(0)
+        self.manual_time_input.setDateTime(QDateTime.currentDateTime())
+        self.export_date_input.setDate(QDate.currentDate())
+        self.export_month_input.setDate(QDate.currentDate())
+
         self.reset_summary()
+        self.refresh_license_status()
 
     def reset_summary(self):
         """

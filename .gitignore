@@ -1,1 +1,5 @@
 build/
+data/attendance.db
+exports/
+debug/
+dist/

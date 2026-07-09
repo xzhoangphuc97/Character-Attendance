@@ -17,15 +17,15 @@ PANEL_RATIO = {
     "x1": 0.145,
     "y1": 0.185,
     "x2": 0.855,
-    "y2": 0.890,
+    "y2": 0.900,
 }
 
 # Vùng tên nhân vật trong từng ô thành viên.
 NAME_REGION_RATIO = {
     "x1": 0.200,
-    "y1": 0.050,
-    "x2": 0.760,
-    "y2": 0.420,
+    "y1": 0.100,
+    "x2": 0.700,
+    "y2": 0.600,
 }
 
 SAVE_DEBUG_CROPS = True
@@ -93,6 +93,16 @@ def clean_character_name(raw_text):
 
     text = raw_text.strip()
 
+    # Remove guild leader prefix, for example:
+    # "[Trưởng] DarkPrey" -> "DarkPrey"
+    # "[Truong] DarkPrey" -> "DarkPrey"
+    text = re.sub(
+        r"^\s*\[(Trưởng|Truong|TRƯỞNG|TRUONG|trưởng|truong)\]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
     text = text.replace("|", "I")
     text = text.replace("!", "I")
     text = text.replace("‘", "")
@@ -110,7 +120,26 @@ def clean_character_name(raw_text):
         text,
     )
 
+    # Remove leader prefix again after cleanup in case OCR keeps brackets.
+    text = re.sub(
+        r"^\s*\[(Trưởng|Truong|TRƯỞNG|TRUONG|trưởng|truong)\]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove spaces inside name.
     text = re.sub(r"\s+", "", text)
+
+    # Extra fallback:
+    # If OCR result becomes "TrưởngDarkPrey" or "TruongDarkPrey",
+    # remove that prefix too.
+    text = re.sub(
+        r"^(Trưởng|Truong|TRƯỞNG|TRUONG|trưởng|truong)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     invalid_keywords = [
         "Cap",
@@ -149,7 +178,6 @@ def clean_character_name(raw_text):
         return None
 
     return text
-
 
 def preprocess_name_crop(name_crop):
     """
