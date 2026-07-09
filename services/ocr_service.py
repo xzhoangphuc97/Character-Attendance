@@ -14,17 +14,17 @@ GRID_COLS = 3
 # Vùng bảng "Quân đoàn" theo tỉ lệ ảnh.
 # Dựa trên screenshot bạn gửi.
 PANEL_RATIO = {
-    "x1": 0.145,
+    "x1": 0.170,
     "y1": 0.185,
-    "x2": 0.855,
+    "x2": 0.830,
     "y2": 0.900,
 }
 
 # Vùng tên nhân vật trong từng ô thành viên.
 NAME_REGION_RATIO = {
-    "x1": 0.200,
+    "x1": 0.185,
     "y1": 0.100,
-    "x2": 0.700,
+    "x2": 0.780,
     "y2": 0.600,
 }
 
