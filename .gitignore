@@ -1,5 +1,8 @@
 build/
-data/attendance.db
 exports/
 debug/
 dist/
+__pycache__/ 
+ui/__pycache__/
+services/__pycache__/
+database/

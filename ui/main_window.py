@@ -130,7 +130,7 @@ class MainWindow(QMainWindow):
         button_layout = QHBoxLayout()
 
         self.btn_select_image = QPushButton("Chọn ảnh")
-        self.btn_process = QPushButton("OCR & Điểm danh")
+        self.btn_process = QPushButton("Điểm danh ảnh QĐ")
         self.btn_clear = QPushButton("Clear")
 
         self.btn_select_image.setFixedHeight(40)
@@ -285,7 +285,23 @@ class MainWindow(QMainWindow):
             """
         )
 
-        main_layout.addWidget(self.summary_label)
+        
+        summary_layout = QHBoxLayout()
+
+        summary_layout.addWidget(self.summary_label)
+
+        contact_label = QLabel("Hoàng Phúc | Hỗ trợ: Zalo 098 128 5695")
+        contact_label.setAlignment(Qt.AlignRight)
+        contact_label.setStyleSheet("""
+            color: #666666;
+            font-size: 10pt;
+        """)
+
+        summary_layout.addStretch()
+        summary_layout.addWidget(contact_label)
+
+        main_layout.addLayout(summary_layout)
+
 
         # =========================
         # Events
